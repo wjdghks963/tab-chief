@@ -16,6 +16,8 @@ export type {
   CleanupFunction,
   ExclusiveTask,
   MessageCallback,
+  StateChangeCallback,
+  LeadershipCallback,
 } from './types';
 
 // Re-export enums
