@@ -374,6 +374,53 @@ When multiple tabs claim leadership simultaneously:
 
 For older browsers, consider using a polyfill or localStorage fallback (not included).
 
+## Publishing to NPM
+
+This package is configured for easy publishing to npm. Follow these steps:
+
+### Prerequisites
+
+1. Create an npm account at [npmjs.com](https://www.npmjs.com)
+2. Login to npm in your terminal:
+   ```bash
+   npm login
+   ```
+
+### Publishing Steps
+
+1. **Update version** (following [semver](https://semver.org/)):
+   ```bash
+   npm version patch  # 1.0.0 -> 1.0.1
+   npm version minor  # 1.0.0 -> 1.1.0
+   npm version major  # 1.0.0 -> 2.0.0
+   ```
+
+2. **Test the package** before publishing:
+   ```bash
+   npm run publish:dry
+   ```
+   This shows what would be published without actually publishing.
+
+3. **Publish to npm**:
+   ```bash
+   npm run publish:npm
+   ```
+   Or directly:
+   ```bash
+   npm publish
+   ```
+
+The `prepublishOnly` script automatically runs type checking, tests, and builds before publishing to ensure quality.
+
+### What Gets Published
+
+Only the following are included in the npm package:
+- `dist/` - Compiled JavaScript and TypeScript definitions
+- `package.json` - Package metadata
+- `README.md` - Documentation
+
+Source files, tests, and configuration files are excluded via `.npmignore`.
+
 ## License
 
 MIT
