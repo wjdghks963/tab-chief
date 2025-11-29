@@ -89,6 +89,7 @@ const chief = new TabChief(options?: TabChiefOptions);
 | `channelName` | `string` | `'tab-chief-default'` | BroadcastChannel name for scoping |
 | `heartbeatInterval` | `number` | `1000` | Heartbeat interval in ms |
 | `electionTimeout` | `number` | `3000` | Time to wait before declaring victory |
+| `debug` | `boolean` | `false` | Enable console logging for debugging |
 
 ### Methods
 
@@ -241,6 +242,39 @@ Returns the unique identifier of this tab.
 
 ```typescript
 console.log(chief.id); // 'lq8x2k-a1b2c3d4'
+```
+
+## Debugging
+
+Enable debug mode to see detailed logs of the election process:
+
+```typescript
+const chief = new TabChief({
+  channelName: 'my-app',
+  debug: true  // Enable debug logging
+});
+
+chief.start();
+```
+
+Debug logs include:
+- Election start and victory announcements
+- Message sending and receiving (ELECTION, ALIVE, VICTORY, HEARTBEAT, SHUTDOWN)
+- State transitions (IDLE → ELECTING → CHIEF/FOLLOWER)
+- Priority comparisons and tie-breaking decisions
+- Callback executions and task counts
+- Conflict detection and resolution
+
+Example console output:
+```
+[TabChief:lq8x2k-a] TabChief initialized { tabId: '...', channelName: 'my-app', ... }
+[TabChief:lq8x2k-a] Starting TabChief
+[TabChief:lq8x2k-a] Starting election { timeout: 3000 }
+[TabChief:lq8x2k-a] Broadcasting ELECTION message
+[TabChief:lq8x2k-a] State change: IDLE → ELECTING
+[TabChief:lq8x2k-a] 🏆 Declaring victory - becoming Chief!
+[TabChief:lq8x2k-a] State change: ELECTING → CHIEF
+[TabChief:lq8x2k-a] Starting heartbeat { interval: 1000 }
 ```
 
 ## Use Cases
