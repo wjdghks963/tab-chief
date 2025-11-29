@@ -28,6 +28,18 @@ export type ExclusiveTask = () => CleanupFunction | void;
 export type MessageCallback<T> = (data: T) => void;
 
 /**
+ * State change callback function type
+ * Called when the tab's state changes
+ */
+export type StateChangeCallback = (newState: TabState, oldState: TabState) => void;
+
+/**
+ * Leadership callback function type
+ * Called when the tab becomes Chief or Follower
+ */
+export type LeadershipCallback = () => void;
+
+/**
  * Internal message types for the election protocol
  */
 export enum MessageType {

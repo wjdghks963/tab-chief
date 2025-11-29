@@ -12,6 +12,8 @@ A lightweight, zero-dependency, framework-agnostic TypeScript library for **Lead
 - **Framework Agnostic** - Works with React, Vue, Angular, vanilla JS, or any other framework
 - **TypeScript First** - Strict TypeScript types included
 - **Effect Pattern** - Automatic cleanup when leadership changes
+- **Event-Driven** - Built-in state change and leadership events
+- **Memory Safe** - Event listener cleanup to prevent memory leaks
 - **Multiple Formats** - Supports ESM, CJS, and IIFE (CDN)
 - **Lightweight** - Minimal bundle size with tree-shaking support
 
@@ -147,6 +149,70 @@ chief.onMessage<{ type: string; payload: any }>((data) => {
 });
 ```
 
+#### `offMessage<T>(callback: (data: T) => void): void`
+
+Removes a message callback to prevent memory leaks.
+
+```typescript
+const handler = (data) => console.log(data);
+chief.onMessage(handler);
+
+// Later, when no longer needed
+chief.offMessage(handler);
+```
+
+#### `onStateChange(callback: (newState: TabState, oldState: TabState) => void): void`
+
+Subscribes to state change events. Called whenever the tab's state changes.
+
+```typescript
+chief.onStateChange((newState, oldState) => {
+  console.log(`State changed from ${oldState} to ${newState}`);
+});
+```
+
+#### `offStateChange(callback: StateChangeCallback): void`
+
+Removes a state change callback.
+
+```typescript
+const handler = (newState, oldState) => console.log(newState);
+chief.onStateChange(handler);
+
+// Later
+chief.offStateChange(handler);
+```
+
+#### `onBecomeChief(callback: () => void): void`
+
+Subscribes to leadership gain events. Called when this tab becomes the Chief.
+
+```typescript
+chief.onBecomeChief(() => {
+  console.log('This tab is now the Chief!');
+  showLeaderBadge();
+});
+```
+
+#### `offBecomeChief(callback: LeadershipCallback): void`
+
+Removes a become Chief callback.
+
+#### `onBecomeFollower(callback: () => void): void`
+
+Subscribes to leadership loss events. Called when this tab loses Chief status.
+
+```typescript
+chief.onBecomeFollower(() => {
+  console.log('This tab is now a Follower');
+  hideLeaderBadge();
+});
+```
+
+#### `offBecomeFollower(callback: LeadershipCallback): void`
+
+Removes a become Follower callback.
+
 ### Properties
 
 #### `isChief: boolean`
@@ -270,6 +336,53 @@ chief.start();
 
 ## React Integration
 
+### Using Event Listeners (Recommended)
+
+```tsx
+import { useEffect, useState, useRef } from 'react';
+import { TabChief } from 'tab-chief';
+
+function useTabChief(channelName: string) {
+  const [isChief, setIsChief] = useState(false);
+  const chiefRef = useRef<TabChief | null>(null);
+
+  useEffect(() => {
+    const chief = new TabChief({ channelName });
+    chiefRef.current = chief;
+
+    // Use event listeners for clean state management
+    const handleBecomeChief = () => setIsChief(true);
+    const handleBecomeFollower = () => setIsChief(false);
+
+    chief.onBecomeChief(handleBecomeChief);
+    chief.onBecomeFollower(handleBecomeFollower);
+
+    chief.start();
+
+    return () => {
+      chief.offBecomeChief(handleBecomeChief);
+      chief.offBecomeFollower(handleBecomeFollower);
+      chief.stop();
+    };
+  }, [channelName]);
+
+  return { isChief, chief: chiefRef.current };
+}
+
+// Usage
+function App() {
+  const { isChief, chief } = useTabChief('my-app');
+
+  return (
+    <div>
+      <p>This tab is: {isChief ? 'Chief' : 'Follower'}</p>
+    </div>
+  );
+}
+```
+
+### Using runExclusive Pattern
+
 ```tsx
 import { useEffect, useState, useRef } from 'react';
 import { TabChief } from 'tab-chief';
@@ -294,20 +407,43 @@ function useTabChief(channelName: string) {
 
   return { isChief, chief: chiefRef.current };
 }
-
-// Usage
-function App() {
-  const { isChief, chief } = useTabChief('my-app');
-
-  return (
-    <div>
-      <p>This tab is: {isChief ? 'Chief' : 'Follower'}</p>
-    </div>
-  );
-}
 ```
 
 ## Vue Integration
+
+### Using Event Listeners (Recommended)
+
+```vue
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue';
+import { TabChief } from 'tab-chief';
+
+const isChief = ref(false);
+let chief: TabChief;
+
+onMounted(() => {
+  chief = new TabChief({ channelName: 'my-vue-app' });
+
+  const handleBecomeChief = () => { isChief.value = true; };
+  const handleBecomeFollower = () => { isChief.value = false; };
+
+  chief.onBecomeChief(handleBecomeChief);
+  chief.onBecomeFollower(handleBecomeFollower);
+
+  chief.start();
+});
+
+onUnmounted(() => {
+  chief?.stop();
+});
+</script>
+
+<template>
+  <div>This tab is: {{ isChief ? 'Chief' : 'Follower' }}</div>
+</template>
+```
+
+### Using runExclusive Pattern
 
 ```vue
 <script setup lang="ts">

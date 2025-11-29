@@ -3,6 +3,8 @@ import {
   CleanupFunction,
   ExclusiveTask,
   MessageCallback,
+  StateChangeCallback,
+  LeadershipCallback,
   MessageType,
   ChannelMessage,
   TabState,
@@ -51,6 +53,9 @@ export class TabChief {
   private exclusiveTasks: ExclusiveTask[] = [];
   private activeCleanups: CleanupFunction[] = [];
   private messageCallbacks: MessageCallback<unknown>[] = [];
+  private stateChangeCallbacks: StateChangeCallback[] = [];
+  private becomeChiefCallbacks: LeadershipCallback[] = [];
+  private becomeFollowerCallbacks: LeadershipCallback[] = [];
 
   private boundBeforeUnload: (() => void) | null = null;
 
@@ -140,7 +145,7 @@ export class TabChief {
       this.channel = null;
     }
 
-    this.state = TabState.STOPPED;
+    this.setState(TabState.STOPPED);
     this.currentChiefId = null;
   }
 
@@ -194,6 +199,83 @@ export class TabChief {
   }
 
   /**
+   * Removes a message callback
+   *
+   * @param callback - The callback function to remove
+   */
+  public offMessage<T>(callback: MessageCallback<T>): void {
+    const index = this.messageCallbacks.indexOf(callback as MessageCallback<unknown>);
+    if (index !== -1) {
+      this.messageCallbacks.splice(index, 1);
+    }
+  }
+
+  /**
+   * Subscribes to state change events
+   *
+   * @param callback - Function to call when the state changes
+   */
+  public onStateChange(callback: StateChangeCallback): void {
+    this.stateChangeCallbacks.push(callback);
+  }
+
+  /**
+   * Removes a state change callback
+   *
+   * @param callback - The callback function to remove
+   */
+  public offStateChange(callback: StateChangeCallback): void {
+    const index = this.stateChangeCallbacks.indexOf(callback);
+    if (index !== -1) {
+      this.stateChangeCallbacks.splice(index, 1);
+    }
+  }
+
+  /**
+   * Subscribes to become Chief events
+   * Called when this tab becomes the Chief (leader)
+   *
+   * @param callback - Function to call when becoming Chief
+   */
+  public onBecomeChief(callback: LeadershipCallback): void {
+    this.becomeChiefCallbacks.push(callback);
+  }
+
+  /**
+   * Removes a become Chief callback
+   *
+   * @param callback - The callback function to remove
+   */
+  public offBecomeChief(callback: LeadershipCallback): void {
+    const index = this.becomeChiefCallbacks.indexOf(callback);
+    if (index !== -1) {
+      this.becomeChiefCallbacks.splice(index, 1);
+    }
+  }
+
+  /**
+   * Subscribes to become Follower events
+   * Called when this tab becomes a Follower (loses leadership)
+   *
+   * @param callback - Function to call when becoming Follower
+   */
+  public onBecomeFollower(callback: LeadershipCallback): void {
+    this.becomeFollowerCallbacks.push(callback);
+  }
+
+  /**
+   * Removes a become Follower callback
+   *
+   * @param callback - The callback function to remove
+   */
+  public offBecomeFollower(callback: LeadershipCallback): void {
+    const index = this.becomeFollowerCallbacks.indexOf(callback);
+    if (index !== -1) {
+      this.becomeFollowerCallbacks.splice(index, 1);
+    }
+  }
+
+  /**
    * Handles incoming messages from BroadcastChannel
    */
   private handleMessage(message: ChannelMessage): void {
@@ -242,7 +324,7 @@ export class TabChief {
       this.electionDebounceTimer = null;
     }, ELECTION_DEBOUNCE_TIME);
 
-    this.state = TabState.ELECTING;
+    this.setState(TabState.ELECTING);
     this.clearElectionTimer();
 
     // Broadcast election request
@@ -263,7 +345,7 @@ export class TabChief {
    */
   private declareVictory(): void {
     this.clearElectionTimer();
-    this.state = TabState.CHIEF;
+    this.setState(TabState.CHIEF);
     this.currentChiefId = this.tabId;
 
     // Broadcast victory
@@ -325,7 +407,7 @@ export class TabChief {
       // Someone with higher priority is alive, wait for their victory
       if (this.shouldYieldTo(senderId, senderTimestamp)) {
         this.clearElectionTimer();
-        this.state = TabState.FOLLOWER;
+        this.setState(TabState.FOLLOWER);
         this.resetElectionTimeout();
       }
     }
@@ -374,7 +456,7 @@ export class TabChief {
   private becomeFollower(chiefId: string): void {
     const wasChief = this.state === TabState.CHIEF;
 
-    this.state = TabState.FOLLOWER;
+    this.setState(TabState.FOLLOWER);
     this.currentChiefId = chiefId;
 
     // Stop heartbeat if we were Chief
@@ -529,6 +611,67 @@ export class TabChief {
         callback(data);
       } catch (error) {
         console.error('[TabChief] Error in message callback:', error);
+      }
+    }
+  }
+
+  /**
+   * Sets the state and triggers callbacks
+   */
+  private setState(newState: TabState): void {
+    const oldState = this.state;
+    if (oldState === newState) {
+      return;
+    }
+
+    this.state = newState;
+
+    // Notify state change callbacks
+    this.notifyStateChangeCallbacks(newState, oldState);
+
+    // Notify leadership callbacks
+    if (newState === TabState.CHIEF && oldState !== TabState.CHIEF) {
+      this.notifyBecomeChiefCallbacks();
+    } else if (newState === TabState.FOLLOWER && oldState === TabState.CHIEF) {
+      this.notifyBecomeFollowerCallbacks();
+    }
+  }
+
+  /**
+   * Notifies all state change callbacks
+   */
+  private notifyStateChangeCallbacks(newState: TabState, oldState: TabState): void {
+    for (const callback of this.stateChangeCallbacks) {
+      try {
+        callback(newState, oldState);
+      } catch (error) {
+        console.error('[TabChief] Error in state change callback:', error);
+      }
+    }
+  }
+
+  /**
+   * Notifies all become Chief callbacks
+   */
+  private notifyBecomeChiefCallbacks(): void {
+    for (const callback of this.becomeChiefCallbacks) {
+      try {
+        callback();
+      } catch (error) {
+        console.error('[TabChief] Error in become Chief callback:', error);
+      }
+    }
+  }
+
+  /**
+   * Notifies all become Follower callbacks
+   */
+  private notifyBecomeFollowerCallbacks(): void {
+    for (const callback of this.becomeFollowerCallbacks) {
+      try {
+        callback();
+      } catch (error) {
+        console.error('[TabChief] Error in become Follower callback:', error);
       }
     }
   }
