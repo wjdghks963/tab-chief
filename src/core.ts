@@ -41,6 +41,7 @@ export class TabChief {
   private readonly heartbeatInterval: number;
   private readonly electionTimeout: number;
   private readonly creationTimestamp: number;
+  private readonly debug: boolean;
 
   private channel: BroadcastChannel | null = null;
   private state: TabState = TabState.IDLE;
@@ -65,6 +66,13 @@ export class TabChief {
     this.channelName = options?.channelName ?? DEFAULT_CHANNEL_NAME;
     this.heartbeatInterval = options?.heartbeatInterval ?? DEFAULT_HEARTBEAT_INTERVAL;
     this.electionTimeout = options?.electionTimeout ?? DEFAULT_ELECTION_TIMEOUT;
+    this.debug = options?.debug ?? false;
+
+    this.log('TabChief initialized', {
+      tabId: this.tabId,
+      channelName: this.channelName,
+      timestamp: this.creationTimestamp,
+    });
   }
 
   /**
@@ -93,8 +101,11 @@ export class TabChief {
    */
   public start(): void {
     if (this.state !== TabState.IDLE && this.state !== TabState.STOPPED) {
+      this.log('start() called but already running', { currentState: this.state });
       return;
     }
+
+    this.log('Starting TabChief');
 
     // Initialize BroadcastChannel
     this.channel = new BroadcastChannel(this.channelName);
@@ -115,11 +126,15 @@ export class TabChief {
    */
   public stop(): void {
     if (this.state === TabState.STOPPED || this.state === TabState.IDLE) {
+      this.log('stop() called but already stopped', { currentState: this.state });
       return;
     }
 
+    this.log('Stopping TabChief', { wasChief: this.state === TabState.CHIEF });
+
     // Announce shutdown if we're the Chief
     if (this.state === TabState.CHIEF) {
+      this.log('Broadcasting SHUTDOWN message');
       this.broadcast({
         type: MessageType.SHUTDOWN,
         senderId: this.tabId,
@@ -173,8 +188,11 @@ export class TabChief {
    */
   public postMessage<T>(data: T): void {
     if (!this.channel || this.state === TabState.STOPPED || this.state === TabState.IDLE) {
+      this.log('postMessage() called but channel not ready', { state: this.state });
       return;
     }
+
+    this.log('Broadcasting user message', { data });
 
     const message: DataMessage<T> = {
       type: MessageType.DATA,
@@ -284,6 +302,11 @@ export class TabChief {
       return;
     }
 
+    this.log(`Received ${message.type} message`, {
+      from: message.senderId.slice(0, 8),
+      type: message.type,
+    });
+
     switch (message.type) {
       case MessageType.HEARTBEAT:
         this.handleHeartbeat(message.senderId);
@@ -317,8 +340,11 @@ export class TabChief {
   private startElection(): void {
     // Debounce rapid elections (e.g., from rapid tab reloading)
     if (this.electionDebounceTimer) {
+      this.log('Election debounced (rapid retry)');
       return;
     }
+
+    this.log('Starting election', { timeout: this.electionTimeout });
 
     this.electionDebounceTimer = setTimeout(() => {
       this.electionDebounceTimer = null;
@@ -328,6 +354,7 @@ export class TabChief {
     this.clearElectionTimer();
 
     // Broadcast election request
+    this.log('Broadcasting ELECTION message');
     this.broadcast({
       type: MessageType.ELECTION,
       senderId: this.tabId,
@@ -344,11 +371,14 @@ export class TabChief {
    * Declares this tab as the new Chief
    */
   private declareVictory(): void {
+    this.log('🏆 Declaring victory - becoming Chief!');
+
     this.clearElectionTimer();
     this.setState(TabState.CHIEF);
     this.currentChiefId = this.tabId;
 
     // Broadcast victory
+    this.log('Broadcasting VICTORY message');
     this.broadcast({
       type: MessageType.VICTORY,
       senderId: this.tabId,
@@ -356,9 +386,11 @@ export class TabChief {
     });
 
     // Start heartbeat
+    this.log('Starting heartbeat', { interval: this.heartbeatInterval });
     this.startHeartbeat();
 
     // Run all exclusive tasks
+    this.log('Running exclusive tasks', { taskCount: this.exclusiveTasks.length });
     this.runAllTasks();
   }
 
@@ -368,8 +400,12 @@ export class TabChief {
   private handleHeartbeat(senderId: string): void {
     if (this.state === TabState.CHIEF && senderId !== this.tabId) {
       // Another tab claims to be Chief - use tie-breaker
+      this.log('⚠️ Conflicting Chief detected', { conflictingChief: senderId.slice(0, 8) });
       if (this.shouldYieldTo(senderId, Date.now())) {
+        this.log('Yielding to other Chief (higher priority)');
         this.becomeFollower(senderId);
+      } else {
+        this.log('Maintaining Chief status (we have priority)');
       }
       return;
     }
@@ -384,8 +420,17 @@ export class TabChief {
    * Handles election request from another tab
    */
   private handleElectionRequest(senderId: string, senderTimestamp: number): void {
+    const shouldYield = this.shouldYieldTo(senderId, senderTimestamp);
+    this.log('Handling election request', {
+      from: senderId.slice(0, 8),
+      shouldYield,
+      myPriority: this.creationTimestamp,
+      theirPriority: senderTimestamp,
+    });
+
     // If we have higher priority (older or smaller ID), respond with ALIVE
-    if (!this.shouldYieldTo(senderId, senderTimestamp)) {
+    if (!shouldYield) {
+      this.log('Responding with ALIVE (we have priority)');
       this.broadcast({
         type: MessageType.ALIVE,
         senderId: this.tabId,
@@ -394,8 +439,11 @@ export class TabChief {
 
       // Start our own election if not already Chief
       if (this.state !== TabState.CHIEF) {
+        this.log('Starting our own election');
         this.startElection();
       }
+    } else {
+      this.log('Not responding (they have priority)');
     }
   }
 
@@ -406,6 +454,9 @@ export class TabChief {
     if (this.state === TabState.ELECTING) {
       // Someone with higher priority is alive, wait for their victory
       if (this.shouldYieldTo(senderId, senderTimestamp)) {
+        this.log('Received ALIVE from higher priority tab, becoming Follower', {
+          from: senderId.slice(0, 8),
+        });
         this.clearElectionTimer();
         this.setState(TabState.FOLLOWER);
         this.resetElectionTimeout();
@@ -421,12 +472,17 @@ export class TabChief {
       return;
     }
 
+    this.log('Received VICTORY announcement', { from: senderId.slice(0, 8) });
+
     if (this.state === TabState.CHIEF) {
       // Conflict - use tie-breaker
+      this.log('⚠️ Victory conflict - both tabs think they are Chief');
       if (this.shouldYieldTo(senderId, Date.now())) {
+        this.log('Yielding to other Chief');
         this.becomeFollower(senderId);
       } else {
         // Re-declare our victory
+        this.log('Maintaining Chief status, re-declaring victory');
         this.broadcast({
           type: MessageType.VICTORY,
           senderId: this.tabId,
@@ -445,6 +501,9 @@ export class TabChief {
   private handleShutdown(senderId: string): void {
     if (senderId === this.currentChiefId) {
       // Chief is leaving, start new election
+      this.log('Chief is shutting down, starting new election', {
+        chiefId: senderId.slice(0, 8),
+      });
       this.currentChiefId = null;
       this.startElection();
     }
@@ -456,6 +515,10 @@ export class TabChief {
   private becomeFollower(chiefId: string): void {
     const wasChief = this.state === TabState.CHIEF;
 
+    this.log(wasChief ? '👥 Losing Chief status, becoming Follower' : 'Becoming Follower', {
+      chiefId: chiefId.slice(0, 8),
+    });
+
     this.setState(TabState.FOLLOWER);
     this.currentChiefId = chiefId;
 
@@ -464,6 +527,7 @@ export class TabChief {
 
     // Run cleanup if we lost leadership
     if (wasChief) {
+      this.log('Running cleanup tasks', { cleanupCount: this.activeCleanups.length });
       this.runCleanups();
     }
 
@@ -624,6 +688,8 @@ export class TabChief {
       return;
     }
 
+    this.log(`State change: ${oldState} → ${newState}`);
+
     this.state = newState;
 
     // Notify state change callbacks
@@ -631,8 +697,10 @@ export class TabChief {
 
     // Notify leadership callbacks
     if (newState === TabState.CHIEF && oldState !== TabState.CHIEF) {
+      this.log('Notifying onBecomeChief callbacks', { count: this.becomeChiefCallbacks.length });
       this.notifyBecomeChiefCallbacks();
     } else if (newState === TabState.FOLLOWER && oldState === TabState.CHIEF) {
+      this.log('Notifying onBecomeFollower callbacks', { count: this.becomeFollowerCallbacks.length });
       this.notifyBecomeFollowerCallbacks();
     }
   }
@@ -673,6 +741,22 @@ export class TabChief {
       } catch (error) {
         console.error('[TabChief] Error in become Follower callback:', error);
       }
+    }
+  }
+
+  /**
+   * Logs debug messages if debug mode is enabled
+   */
+  private log(message: string, data?: Record<string, unknown>): void {
+    if (!this.debug) {
+      return;
+    }
+
+    const prefix = `[TabChief:${this.tabId.slice(0, 8)}]`;
+    if (data) {
+      console.log(prefix, message, data);
+    } else {
+      console.log(prefix, message);
     }
   }
 

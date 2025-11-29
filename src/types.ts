@@ -8,6 +8,8 @@ export interface TabChiefOptions {
   heartbeatInterval?: number;
   /** Election timeout in milliseconds (default: 3000ms) */
   electionTimeout?: number;
+  /** Enable debug logging to console (default: false) */
+  debug?: boolean;
 }
 
 /**
