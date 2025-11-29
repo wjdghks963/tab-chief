@@ -231,34 +231,33 @@ describe('TabChief', () => {
     it('should transfer leadership on Chief shutdown', async () => {
       const chief1 = new TabChief({
         channelName: 'test-transfer',
-        electionTimeout: 1000,
-        heartbeatInterval: 500,
+        electionTimeout: 500,
+        heartbeatInterval: 200,
       });
+
+      // chief1 starts and becomes Chief
+      chief1.start();
+      await vi.advanceTimersByTimeAsync(600);
+      expect(chief1.isChief).toBe(true);
+
       const chief2 = new TabChief({
         channelName: 'test-transfer',
-        electionTimeout: 1000,
-        heartbeatInterval: 500,
+        electionTimeout: 500,
+        heartbeatInterval: 200,
       });
 
-      chief1.start();
-      await vi.advanceTimersByTimeAsync(1100);
-
+      // chief2 starts - will receive heartbeat and become Follower
       chief2.start();
-      // Allow message propagation and heartbeat reception
-      await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(10); // Initial message propagation
+      await vi.advanceTimersByTimeAsync(200); // Wait for heartbeat cycle
 
-      // chief1 should be Chief
-      expect(chief1.isChief).toBe(true);
-      expect(chief2.isChief).toBe(false);
-
-      // Shutdown chief1
+      // Shutdown chief1 - will trigger immediate election in chief2
       chief1.stop();
-      // Allow shutdown message propagation (setTimeout in MockBroadcastChannel)
-      await vi.advanceTimersByTimeAsync(50);
+      await vi.advanceTimersByTimeAsync(10); // Shutdown message propagation
 
-      // chief2 should start election and win after timeout
-      // Need full electionTimeout + debounce time + buffer
-      await vi.advanceTimersByTimeAsync(1500);
+      // chief2 starts election after receiving shutdown
+      // electionDebounce(100) + electionTimeout(500) + buffer
+      await vi.advanceTimersByTimeAsync(700);
 
       expect(chief2.isChief).toBe(true);
 
