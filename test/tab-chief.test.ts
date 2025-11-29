@@ -253,11 +253,12 @@ describe('TabChief', () => {
 
       // Shutdown chief1
       chief1.stop();
-      // Allow shutdown message propagation
-      await vi.advanceTimersByTimeAsync(100);
+      // Allow shutdown message propagation (setTimeout in MockBroadcastChannel)
+      await vi.advanceTimersByTimeAsync(50);
 
       // chief2 should start election and win after timeout
-      await vi.advanceTimersByTimeAsync(1200);
+      // Need full electionTimeout + debounce time + buffer
+      await vi.advanceTimersByTimeAsync(1500);
 
       expect(chief2.isChief).toBe(true);
 
