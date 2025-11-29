@@ -3,3 +3,11 @@ dist/
 *.log
 .DS_Store
 coverage/
+
+# NPM package files
+*.tgz
+
+# Test publish artifacts
+test-publish/example-app/node_modules/
+test-publish/example-app/dist/
+test-publish/example-app/package-lock.json

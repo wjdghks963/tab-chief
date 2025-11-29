@@ -28,7 +28,8 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run typecheck && npm run test:run && npm run build",
     "publish:npm": "npm publish",
-    "publish:dry": "npm publish --dry-run"
+    "publish:dry": "npm publish --dry-run",
+    "test:local": "bash test-publish/test-local.sh"
   },
   "keywords": [
     "leader-election",
